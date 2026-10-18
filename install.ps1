@@ -7,15 +7,15 @@ $ErrorActionPreference = 'Stop'
 $src = Split-Path -Parent $MyInvocation.MyCommand.Path
 $assets = Join-Path $src 'assets'
 
-Write-Host "==> 安装到 $Root"
-if ($DryRun) { Write-Host "(dry run，不写盘)" }
+Write-Host "==> installing to $Root"
+if ($DryRun) { Write-Host "(dry run, nothing written)" }
 
 if (-not $DryRun) {
     New-Item -ItemType Directory -Force "$Root\assets", "$Root\bin", "$Root\pj-logs" | Out-Null
     Copy-Item "$assets\patch.yml", "$assets\pj-operator-policy.mjs", "$assets\pj-jailbreak.mjs", "$assets\pj-gateway.yml" "$Root\assets\" -Force
 }
 
-# ---- 启动器 ---------------------------------------------------------------
+# ---- launcher -------------------------------------------------------------
 $launcher = @'
 $root = Split-Path -Parent $PSScriptRoot
 $agentProfile = if ($env:DSHPJ_PROFILE) { $env:DSHPJ_PROFILE } else { 'web' }
@@ -38,21 +38,21 @@ if (-not $DryRun) {
     Copy-Item (Join-Path $src 'doctor.ps1') "$Root\bin\doctor.ps1" -Force
 }
 
-# ---- PowerShell profile 函数 ---------------------------------------------
+# ---- PowerShell profile functions ----------------------------------------
 if (-not $SkipProfile -and -not $DryRun) {
-    $block = "`n# dshpj — 无限制 DSH（补丁只在命令行加载，不改 profile 文件）`nfunction dshpj { & `"$Root\bin\dshpj.ps1`" @args }`nfunction dshpj-doctor { & `"$Root\bin\doctor.ps1`" @args }`n"
+    $block = "`n# dshpj - unrestricted DSH (patches load from the command line only)`nfunction dshpj { & `"$Root\bin\dshpj.ps1`" @args }`nfunction dshpj-doctor { & `"$Root\bin\doctor.ps1`" @args }`n"
     $profilePath = $PROFILE.CurrentUserAllHosts
     $existing = if (Test-Path $profilePath) { Get-Content $profilePath -Raw } else { '' }
     if ($existing -notmatch [regex]::Escape("$Root\bin\dshpj.ps1")) {
         New-Item -ItemType Directory -Force (Split-Path -Parent $profilePath) | Out-Null
         Add-Content -Path $profilePath -Value $block -Encoding utf8
-        Write-Host "==> 已写入 $profilePath"
+        Write-Host "==> wrote $profilePath"
     }
 }
 
 Write-Host ''
-Write-Host "装好了。重开 PowerShell，或 . `$PROFILE，然后："
-Write-Host "  dshpj              # 启动"
-Write-Host "  dshpj-doctor       # 升级后自检"
+Write-Host 'installed. Reopen PowerShell (or dot-source $PROFILE), then:'
+Write-Host '  dshpj              # start'
+Write-Host '  dshpj-doctor       # self-check after a dsh upgrade'
 Write-Host ''
-Write-Host "DSH_HOME 没动，补丁只加在 dshpj 这条命令行上；原版 dsh 不受影响。"
+Write-Host 'DSH_HOME untouched; patches are passed on the dshpj command line only.'
