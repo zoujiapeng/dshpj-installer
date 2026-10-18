@@ -1,5 +1,21 @@
 # dshpj — 给 DSH 叠一层"操作模式"的可移植安装器
 
+**一行装**
+
+```bash
+# Linux / Termux / macOS
+curl -fsSL https://raw.githubusercontent.com/zoujiapeng/dshpj-installer/main/bootstrap.sh | bash
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/zoujiapeng/dshpj-installer/main/bootstrap.ps1 | iex
+```
+
+**一句话让 AI 装**：把仓库链接发给任意 dsh 会话，说"安装这个"。仓库根目录有
+[AGENTS.md](AGENTS.md)，代理读它就知道 clone 哪个、跑哪条命令、怎么验证；README
+顶部的两行就是兜底。
+
 思路一句话：**不动 dsh 的任何文件，只在启动命令上多加一个 `--patch`。**
 
 ```
