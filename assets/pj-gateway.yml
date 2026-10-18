@@ -1,0 +1,23 @@
+# dshpj 可选补丁：把默认模型切到任意 OpenAI 兼容端点（本地 llama.cpp / ollama / LM Studio /
+# vLLM / OpenRouter / 自建网关）。只有设置了 PJ_LLM_BASE_URL 才生效；未设置时两条
+# 条目都处于 disabled 状态，profile 完全不受影响，默认仍然是 deepseek-official。
+#
+# 用法（PowerShell，dshpj 启动前设置）：
+#   $env:PJ_LLM_BASE_URL = 'http://127.0.0.1:1234/v1'   # LM Studio 默认端口
+#   $env:PJ_LLM_MODEL    = 'local-model-id'
+#   $env:PJ_LLM_API_KEY  = 'sk-...'                     # 本地无鉴权时不用设
+#   dshpj
+#
+# 环境变量：
+#   PJ_LLM_BASE_URL  必填，OpenAI 兼容端点基址（带 /v1）
+#   PJ_LLM_MODEL     必填，端点上的模型 id
+#   PJ_LLM_API_KEY   可选，设置了才写进 apiKeyEnv（本地无鉴权服务不要设）
+#   PJ_LLM_API       可选，默认 openai-completions；Anthropic 协议端点填 anthropic-messages
+#
+# 恢复默认模型：Remove-Item Env:PJ_LLM_BASE_URL 之后重启 dshpj。
+- id: llm-pi-ai
+  disabled: !!js process.env.PJ_LLM_BASE_URL === undefined
+  config: !!js '(function () { var model = process.env.PJ_LLM_MODEL || "local"; var profile = { displayName: "PJ Gateway", api: process.env.PJ_LLM_API || "openai-completions", baseURL: process.env.PJ_LLM_BASE_URL, models: [{ id: model, name: model }] }; if (process.env.PJ_LLM_API_KEY) profile.apiKeyEnv = "PJ_LLM_API_KEY"; return { providers: { "pj-gateway": profile } }; })()'
+- id: agent-default-model
+  disabled: !!js process.env.PJ_LLM_BASE_URL === undefined
+  config: !!js '({ provider: "pj-gateway", model: process.env.PJ_LLM_MODEL || "local" })'
