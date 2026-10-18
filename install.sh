@@ -69,4 +69,8 @@ echo "装好了。重开终端或 source ~/.bashrc，然后："
 echo "  dshpj                     # 启动（默认 web）"
 echo "  dshpj tui                 # 走别的 profile：dshpj <profile> 不行，用 DSHPJ_PROFILE=tui dshpj"
 echo "  dshpj-doctor              # 升级后自检"
-[ -e "$HOME/.dsh" ] && echo && echo "注意：DSH_HOME 没动，用的还是你自己的 ~/.dsh，补丁只加在这条命令行上。"
+if [ -e "$HOME/.dsh" ]; then
+  echo
+  echo "注意：DSH_HOME 没动，用的还是你自己的 ~/.dsh，补丁只加在这条命令行上。"
+fi
+exit 0
