@@ -103,3 +103,21 @@ dshpj-doctor
 - node ≥ 20、`dsh` 在 PATH
 - 装之前先 `dsh` 能正常启动一次（profile 已初始化）
 - 补丁只在这条命令行生效，`dsh` 原版行为不变
+
+## 实测记录
+
+| 环境 | 结果 |
+|---|---|
+| Windows 11 + PowerShell 7 | `install.ps1` → 启动器传参正确；`doctor.ps1` PASS（20 段装配全在） |
+| Windows 11 + Windows PowerShell 5.1 | 同一份远端脚本 → PASS |
+| WSL Ubuntu 24.04 + node v22 | `curl \| bash` 一行装 → 文件齐、`.bashrc` 写入、启动器传参正确、**Linux node 下 `--dump-config` 1441 行含 4 条 `pj-` 条目** |
+| Termux (Android) | 未真机测试；依赖只有 bash/curl/node，路径与 Linux 相同 |
+
+实测中抓到并修掉的两个问题：
+
+- Windows PowerShell 5.1 读无 BOM 的 UTF-8 会乱码 → 所有 `.ps1` 改为纯 ASCII 输出。
+- GitHub 的 tarball 在弱网下会被 `curl: (56)` 截断 → 一行装改为逐个下载小文件并各自重试。
+
+**一行装注意**：push 后 `raw.githubusercontent.com` 有几分钟 CDN 缓存，刚改完立刻装可能拿到旧文件；
+脚本内的下载都带时间戳参数，正常情况不受影响。
+
