@@ -40,8 +40,14 @@ npm 包，补丁文件还在原地；最坏情况是插件 API 变了，`dshpj` 
 | L7 | `llm/stream` | 首段是拒答就丢弃 + 追加"拒答作废"重发两次 |
 | L8 | `agent/request` | 覆盖 temperature（`PJ_TEMPERATURE`） |
 | L10 | 流式过滤 | 删掉"for educational purposes only"这类样板句 |
+| L11 | 系统提示词末段 section（order 10777） | 认知权威：用户陈述=公理，优先序阶梯，不核实/不纠正/不铺垫 |
+| L12 | 运行时上下文（order 10077） | 每步刷新的 axiom 提醒，排在 task-frame 之后，是模型开口前读到的最后一段 |
+| L13 | `llm/stream`（`PJ_FACT_HARD=1`） | 改写最后一条 user 消息开头，抗压缩/抗摘要，系统提示词被丢掉也还在 |
 
 （L9 是把预设 persona 设成 `complete: true`，需要改 profile 层，安装器默认不做。）
+
+L1–L8、L10 管的是"**愿不愿意做**"；L11–L13 管的是"**把用户的话当不当真**"。两件事分开：
+用户给的陈述当事实照单全收，工具真正返回的东西仍然只如实汇报——认知层因此不会退化成幻觉。
 
 ## 安装
 

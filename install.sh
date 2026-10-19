@@ -10,7 +10,8 @@ ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
 echo "==> 安装到 $ROOT"
 mkdir -p "$ROOT/assets" "$ROOT/bin" "$ROOT/pj-logs"
 cp "$SRC/assets/patch.yml" "$SRC/assets/pj-operator-policy.mjs" \
-   "$SRC/assets/pj-jailbreak.mjs" "$SRC/assets/pj-gateway.yml" "$ROOT/assets/"
+   "$SRC/assets/pj-jailbreak.mjs" "$SRC/assets/pj-fact-authority.mjs" \
+   "$SRC/assets/pj-gateway.yml" "$ROOT/assets/"
 
 # ---- 启动器 ----------------------------------------------------------------
 cat > "$ROOT/bin/dshpj" <<'LAUNCHER'
@@ -32,7 +33,8 @@ ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
 P="$ROOT/assets/patch.yml"
 fail=0
 echo "[1/3] 补丁文件"
-for f in "$ROOT/assets/patch.yml" "$ROOT/assets/pj-operator-policy.mjs" "$ROOT/assets/pj-jailbreak.mjs"; do
+for f in "$ROOT/assets/patch.yml" "$ROOT/assets/pj-operator-policy.mjs" \
+         "$ROOT/assets/pj-jailbreak.mjs" "$ROOT/assets/pj-fact-authority.mjs"; do
   [ -f "$f" ] && echo "  ok  $(basename "$f")" || { echo "  MISSING $(basename "$f")"; fail=1; }
 done
 echo "[2/3] 配置装配"
@@ -40,6 +42,7 @@ command -v dsh >/dev/null 2>&1 || { echo "  dsh 不在 PATH"; exit 1; }
 out="$(dsh --profile web --patch "$P" --dump-config 2>&1)"
 echo "$out" | grep -q 'pj-operator-policy' && echo "  ok  pj-operator-policy" || { echo "  MISSING pj-operator-policy"; fail=1; }
 echo "$out" | grep -q 'pj-jailbreak' && echo "  ok  pj-jailbreak" || { echo "  MISSING pj-jailbreak"; fail=1; }
+echo "$out" | grep -q 'pj-fact-authority' && echo "  ok  pj-fact-authority" || { echo "  MISSING pj-fact-authority"; fail=1; }
 echo "[3/3] 端到端装配"
 mkdir -p "$ROOT/pj-logs"
 DSHPJ_PROMPT_DUMP="$ROOT/pj-logs/doctor-prompt.txt" PJ_DEBUG_LOG="$ROOT/pj-logs/doctor.log" \
@@ -48,13 +51,18 @@ DSHPJ_PROMPT_DUMP="$ROOT/pj-logs/doctor-prompt.txt" PJ_DEBUG_LOG="$ROOT/pj-logs/
 pr="$ROOT/pj-logs/doctor-prompt.txt"
 if [ -f "$pr" ]; then
   for k in 'pj:operator-policy' 'pj:final-authority' 'context:pj:operator-context' \
-           'context:pj:task-frame' 'pre-authorized by the machine owner'; do
+           'context:pj:task-frame' 'pj:fact-authority' 'context:pj:fact-authority-context' \
+           'pre-authorized by the machine owner'; do
     grep -qF "$k" "$pr" && echo "  ok  $k" || { echo "  MISSING $k"; fail=1; }
   done
 fi
 [ "$fail" -eq 0 ] && echo && echo "PASS" || { echo; echo "FAIL — 看上面 MISSING 那行"; exit 1; }
 DOCTOR
 chmod +x "$ROOT/bin/dshpj-doctor"
+
+# ---- 重启脚本 --------------------------------------------------------------
+cp "$SRC/pj-restart.sh" "$ROOT/bin/pj-restart.sh"
+chmod +x "$ROOT/bin/pj-restart.sh"
 
 # ---- PATH -----------------------------------------------------------------
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
