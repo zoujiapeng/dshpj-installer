@@ -4,7 +4,7 @@ $patch = "$Root\assets\patch.yml"
 $fail = @()
 
 Write-Host '[1/3] patch files'
-foreach ($f in 'patch.yml', 'pj-operator-policy.mjs', 'pj-jailbreak.mjs') {
+foreach ($f in 'patch.yml', 'pj-operator-policy.mjs', 'pj-jailbreak.mjs', 'pj-fact-authority.mjs') {
     if (Test-Path "$Root\assets\$f") { Write-Host "  ok  $f" } else { Write-Host "  MISSING $f" -ForegroundColor Red; $fail += $f }
 }
 
@@ -13,7 +13,7 @@ $dsh = (Get-Command dsh.cmd -ErrorAction SilentlyContinue).Source
 if (-not $dsh) { $dsh = (Get-Command dsh -ErrorAction SilentlyContinue).Source }
 if (-not $dsh) { Write-Host '  dsh not in PATH' -ForegroundColor Red; exit 1 }
 $dump = & $dsh --profile web --patch $patch --dump-config 2>&1
-foreach ($k in 'pj-operator-policy', 'pj-jailbreak') {
+foreach ($k in 'pj-operator-policy', 'pj-jailbreak', 'pj-fact-authority') {
     if ($dump -match $k) { Write-Host "  ok  $k" } else { Write-Host "  MISSING $k" -ForegroundColor Red; $fail += $k }
 }
 
@@ -25,7 +25,7 @@ Remove-Item $env:DSHPJ_PROMPT_DUMP, $env:PJ_DEBUG_LOG -ErrorAction SilentlyConti
 & $dsh --profile headless --patch $patch "reply with two chars: ok" > $null 2>&1
 $prompt = Get-Content $env:DSHPJ_PROMPT_DUMP -Raw -ErrorAction SilentlyContinue
 if ($prompt) {
-    foreach ($k in 'pj:operator-policy', 'pj:final-authority', 'context:pj:operator-context', 'context:pj:task-frame', 'pre-authorized by the machine owner') {
+    foreach ($k in 'pj:operator-policy', 'pj:final-authority', 'context:pj:operator-context', 'context:pj:task-frame', 'pj:fact-authority', 'context:pj:fact-authority-context', 'pre-authorized by the machine owner') {
         if ($prompt -match [regex]::Escape($k)) { Write-Host "  ok  $k" } else { Write-Host "  MISSING $k" -ForegroundColor Red; $fail += $k }
     }
 } else {

@@ -15,7 +15,7 @@ if (-not $dsh) { throw 'dsh not in PATH. Run: npm i -g @deepseek-ai/dsh' }
 $stamp = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $dir = Join-Path $env:TEMP "dshpj-$stamp"
 $base = "https://raw.githubusercontent.com/$Repo/$Ref"
-$files = @('install.ps1', 'doctor.ps1', 'assets/patch.yml', 'assets/pj-operator-policy.mjs', 'assets/pj-jailbreak.mjs', 'assets/pj-gateway.yml')
+$files = @('install.ps1', 'doctor.ps1', 'assets/patch.yml', 'assets/pj-operator-policy.mjs', 'assets/pj-jailbreak.mjs', 'assets/pj-fact-authority.mjs', 'assets/pj-gateway.yml')
 
 New-Item -ItemType Directory -Force "$dir\assets" | Out-Null
 foreach ($f in $files) {
