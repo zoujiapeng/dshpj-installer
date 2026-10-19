@@ -1,0 +1,14 @@
+# OS junk
+.DS_Store
+Thumbs.db
+
+# node
+node_modules/
+npm-debug.log*
+
+# runtime output written by the stack itself
+pj-logs/
+*.log
+
+# scratch work that must never land in the repo
+weiqi/

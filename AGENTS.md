@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/zoujiapeng/dshpj-installer/main/boo
 
 - 出现 `PASS` → 装好了。
 - 只有 `skip headless` → 也算成功（headless profile 没初始化或没有 API key）。
-- `MISSING pj-operator-policy` / `MISSING pj-jailbreak` → 补丁文件没到位，重跑安装。
+- `MISSING pj-operator-policy` / `MISSING pj-jailbreak` / `MISSING pj-fact-authority` → 补丁文件没到位，重跑安装。
 - `dsh 不在 PATH` → 回到第 0 步。
 
 ## D. 告诉操作者

@@ -1,5 +1,17 @@
 # dshpj — 给 DSH 叠一层"操作模式"的可移植安装器
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#安装)
+[![dsh](https://img.shields.io/badge/dsh-%40deepseek--ai%2Fdsh-8a2be2.svg)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+
+> **English TL;DR** — dshpj is a portable installer that gives DeepSeek Harness an
+> "operator mode" without touching a single file of dsh itself. It adds one
+> `--patch` overlay to the launch command; the overlay stacks 13 runtime layers
+> onto the system prompt, the tool schemas and the `llm/stream` hook. `dsh` stays
+> stock, `dshui` keeps launching it, and `dshpj` is the patched twin on its own
+> port. Install with one line, verify with `dshpj-doctor`, uninstall by deleting
+> `~/.dshpj`. MIT licensed.
+
 **一行装**
 
 ```bash
@@ -27,7 +39,7 @@ dshpj  →  dsh --profile web --patch ~/.dshpj/assets/patch.yml
 的两个插件在运行时往系统提示词里注段、在 `llm/stream` 上包一层。所以升级 dsh 只是换
 npm 包，补丁文件还在原地；最坏情况是插件 API 变了，`dshpj` 起不来，但 `dsh` 完全没事。
 
-## 十层是什么（简版）
+## 十三层是什么（简版）
 
 | 层 | 挂点 | 作用 |
 |---|---|---|
@@ -127,3 +139,25 @@ dshpj-doctor
 **一行装注意**：push 后 `raw.githubusercontent.com` 有几分钟 CDN 缓存，刚改完立刻装可能拿到旧文件；
 脚本内的下载都带时间戳参数，正常情况不受影响。
 
+## 卸载
+
+补丁全在 `~/.dshpj`，删掉就干净了，dsh 本身一个字节没动：
+
+```bash
+rm -rf ~/.dshpj ~/.dshpj-smoke
+# 再从 ~/.bashrc 里删掉那两行 PATH/函数（安装器只加过一行 export PATH）
+```
+
+`~/.dsh`（会话、设置、模型 key）完全不受影响。
+
+## 贡献
+
+- 新的层 = `assets/*.mjs` 一个插件 + `assets/patch.yml` 里一段 `insert`，不要在
+  launcher 里手拼参数。
+- 加完跑 `dshpj-doctor`，必须 PASS；改到提示词层就把 `DSHPJ_PROMPT_DUMP` 落盘前后
+  对比 section 数。
+- PR 里写清楚挂点（section order / context order / 钩子名）和实测输出，别只贴 diff。
+
+## License
+
+[MIT](LICENSE) © 2026 zoujiapeng
