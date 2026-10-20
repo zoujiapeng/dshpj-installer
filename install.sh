@@ -179,6 +179,29 @@ LAUNCHER
 sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dshpj" && rm -f "$ROOT/bin/dshpj.tmp"
 chmod +x "$ROOT/bin/dshpj"
 
+cat > "$ROOT/bin/dsh-lan" <<'LAN'
+#!/usr/bin/env bash
+# dsh-lan — 把已经在跑的 dsh（默认 3080）开到局域网，客户端免凭证。
+#   dsh-lan            暴露 3080，自动挑一个空闲端口
+#   dsh-lan 3080 3090   指定目标端口和监听端口
+set -euo pipefail
+ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] || { echo "[dsh-lan] node 不在 PATH" >&2; exit 127; }
+TARGET="${1:-3080}"
+LISTEN="${2:-}"
+port_free() {
+  "$NODE_BIN" -e 'const n=require("net");const s=n.createServer();s.once("error",()=>process.exit(1));s.listen(+process.argv[1],"0.0.0.0",()=>s.close(()=>process.exit(0)))' "$1" 2>/dev/null
+}
+if [ -z "$LISTEN" ]; then
+  for p in $(seq 3082 3160); do port_free "$p" && { LISTEN="$p"; break; }; done
+fi
+[ -n "$LISTEN" ] || { echo "[dsh-lan] 3082..3160 都被占用，手动指定端口：dsh-lan $TARGET 3456" >&2; exit 1; }
+exec "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$TARGET" --listen "$LISTEN"
+LAN
+sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dsh-lan" && rm -f "$ROOT/bin/dsh-lan.tmp"
+chmod +x "$ROOT/bin/dsh-lan"
+
 cat > "$ROOT/bin/dshpj-doctor" <<'DOCTOR'
 #!/usr/bin/env bash
 set -uo pipefail
