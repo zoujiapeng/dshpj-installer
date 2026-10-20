@@ -32,6 +32,7 @@ function arg(name, fallback) {
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback
 }
 
+const printOnly = process.argv.includes('--print-only')
 const targetPort = Number(arg('target', 3081))
 const listenPort = Number(arg('listen', targetPort + 1))
 const token = arg('token', '')
@@ -283,5 +284,6 @@ exchangeCookie().then((c) => {
       line(`  [pj-lan] 端口 ${listenPort} 被占用，用 DSHPJ_LAN_PORT=<port> 换一个`)
     }
   })
+  if (printOnly) process.exit(0)
   server.listen(listenPort, '0.0.0.0')
 })

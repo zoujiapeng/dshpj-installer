@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.4.0 — 2026-10-20
+
+- `dshpj` no longer dies when the terminal closes: the LAN proxy now runs from a
+  generated supervisor started with `setsid`, so it survives the shell and
+  restarts itself if it exits.
+- `dshpj` opens the **direct** `127.0.0.1:<port>/?token=…` URL again. Opening the
+  proxy origin made the SPA start with an empty local state, which looked like
+  "sessions disappeared". The proxy URL is still printed for phones/computers.
+- Re-running `dshpj` reuses the proxy already listening (`pj-logs/dshpj.log.lan.port`)
+  instead of starting another instance on the next port.
+- `pj-lan.mjs --print-only` renders the LAN URL + QR without binding a socket, so
+  the launcher can print it while the real proxy runs detached.
+
 ## v1.3.0 — 2026-10-20
 
 - **Fixed: the LAN proxy died on every page refresh.** When the browser reconnects,

@@ -42,6 +42,8 @@ DSH_BIN="$(command -v dsh || true)"
 [ -n "$DSH_BIN" ] || { echo "[dshpj] dsh 不在 PATH：npm i -g @deepseek-ai/dsh" >&2; exit 127; }
 NODE_BIN="$(command -v node || true)"
 [ -n "$NODE_BIN" ] || { echo "[dshpj] node 不在 PATH" >&2; exit 127; }
+BASH_BIN="$(command -v bash || true)"
+[ -n "$BASH_BIN" ] || BASH_BIN=/bin/bash
 
 args=(--profile "$PROFILE" --patch "$ROOT/assets/patch.yml")
 [ -n "${PJ_LLM_BASE_URL:-}" ] && args+=(--patch "$ROOT/assets/pj-gateway.yml")
@@ -145,36 +147,46 @@ fi
 
 # 局域网代理自己持 cookie，客户端 URL 里不带任何 token。
 # 先起代理、等它监听，再开浏览器；前台等代理，Ctrl-C 只停代理，后台服务还在。
-LAN_PORT="$(pick_lan_port)" || { echo "[dshpj] 局域网端口 $LAN_PORT 起被占满，用 DSHPJ_LAN_PORT 指定" >&2; exit 1; }
+# 已经有一个本项目的代理在跑就直接复用，不要每次 dshpj 都再起一个
+REUSE_LAN=0
+if [ -f "$LOG.lan.port" ]; then
+  p="$(cat "$LOG.lan.port" 2>/dev/null || true)"
+  if [ -n "$p" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$p/" 2>/dev/null || true)" != "000" ]; then
+    LAN_PORT="$p"; REUSE_LAN=1
+  fi
+fi
+if [ "$REUSE_LAN" = "0" ]; then
+  LAN_PORT="$(pick_lan_port)" || { echo "[dshpj] 局域网端口 $LAN_PORT 起被占满，用 DSHPJ_LAN_PORT 指定" >&2; exit 1; }
+  echo "$LAN_PORT" > "$LOG.lan.port"
+fi
 
-# 代理守护：异常退出就重起（浏览器刷新会掐断 SSE，早前一次 ECONNRESET 就能把整个
-# 代理带走，用户看到的就是"页面空白、会话消失"）。这里保证它死了会自己回来。
-LAN_PID=""
-supervise() {
-  trap 'kill ${LAN_PID:-0} 2>/dev/null; exit 0' INT TERM
-  local rc=0
-  while :; do
-    # 放进 if 里，set -e 才不会在代理非 0 退出时把守护循环一起干掉
-    if "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" --log "$LOG.lan-req"; then
-      break
-    else
-      rc=$?
-    fi
-    echo "[dshpj] 局域网代理退出（$rc），1 秒后重启"
-    sleep 1
-  done
-}
-supervise &
-SUP_PID=$!
-LAN_PID=$SUP_PID
-echo $LAN_PID > "$LOG.lan.pid"
+# 代理跑在独立会话里：关掉终端也不影响，死了自己重起。
+SUP="$ROOT/bin/pj-lan-supervise"
+cat > "$SUP" <<SUPER
+#!$BASH_BIN
+while :; do
+  "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" --log "$LOG.lan-req"
+  rc=\$?
+  [ "\$rc" -eq 0 ] && break
+  printf '%s lan exit %s, restart\n' "\$(date '+%F %T')" "\$rc" >> "$LOG.lan"
+  sleep 1
+done
+SUPER
+chmod +x "$SUP"
+if [ "$REUSE_LAN" = "0" ]; then
+  setsid nohup "$SUP" >>"$LOG.lan" 2>&1 </dev/null &
+  echo $! > "$LOG.lan.pid"
+fi
 
 for _ in $(seq 1 40); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$LAN_PORT/" 2>/dev/null || true)" != "000" ] && break
   sleep 0.2
 done
-open_url "http://127.0.0.1:$LAN_PORT/" || echo "[dshpj] 打不开浏览器，手动访问：http://127.0.0.1:$LAN_PORT/"
-wait $SUP_PID
+
+# 本机开浏览器用"直连 3081 + token"，和以前同一个 origin，历史记录照旧；
+# 局域网地址（免凭证）单独打印给手机/别的电脑用。
+"$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" --print-only
+open_url "$LOCAL_URL" || echo "[dshpj] 打不开浏览器，手动访问：$LOCAL_URL"
 LAUNCHER
 sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dshpj" && rm -f "$ROOT/bin/dshpj.tmp"
 chmod +x "$ROOT/bin/dshpj"
