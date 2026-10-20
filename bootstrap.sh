@@ -9,7 +9,7 @@ REPO="${DSHPJ_REPO:-zoujiapeng/dshpj-installer}"
 REF="${DSHPJ_REF:-main}"
 ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
 BASE="https://raw.githubusercontent.com/$REPO/$REF"
-FILES="install.sh doctor.ps1 pj-restart.sh assets/patch.yml assets/pj-operator-policy.mjs assets/pj-jailbreak.mjs assets/pj-fact-authority.mjs assets/pj-gateway.yml"
+FILES="install.sh doctor.ps1 pj-restart.sh assets/patch.yml assets/pj-operator-policy.mjs assets/pj-jailbreak.mjs assets/pj-fact-authority.mjs assets/pj-lan.mjs assets/qrcode.js assets/pj-gateway.yml"
 STAMP="$(date +%s)"
 
 command -v curl >/dev/null || { echo "需要 curl：pkg install curl / apt install curl" >&2; exit 1; }

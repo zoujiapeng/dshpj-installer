@@ -70,7 +70,7 @@ curl -fsSL https://raw.githubusercontent.com/zoujiapeng/dshpj-installer/main/boo
 ## D. 告诉操作者
 
 1. 重开终端（或 `source ~/.bashrc` / `. $PROFILE`）。
-2. `dshpj` 启动；`dshpj-doctor` 自检；`DSHPJ_PROFILE=tui dshpj` 换 profile。
+2. `dshpj` 启动，终端会打印局域网网址和二维码（手机扫码直接进）；`dshpj-doctor` 自检；`DSHPJ_PROFILE=tui dshpj` 换 profile。
 3. 原版 `dsh` 行为不变，补丁只加在 `dshpj` 这条命令行上。
 
 ## 不要做的事
