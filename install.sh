@@ -191,6 +191,82 @@ LAUNCHER
 sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dshpj" && rm -f "$ROOT/bin/dshpj.tmp"
 chmod +x "$ROOT/bin/dshpj"
 
+cat > "$ROOT/bin/dsh" <<'DSHWRAP'
+#!/usr/bin/env bash
+# dsh — 不带参数时起原版 dsh（默认 3080），并把它开到局域网，终端打印网址 + 二维码。
+# 带参数时原样透传给真正的 dsh（~/.local/bin/dsh），行为和以前完全一致。
+#   dsh                起原版 + 局域网入口 + 二维码
+#   dsh web --port 4000 透传
+#   DSH_WEB_PORT=3095 dsh   换本机端口
+set -uo pipefail
+ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
+REAL="${DSH_REAL:-$HOME/.local/bin/dsh}"
+[ -x "$REAL" ] || { echo "[dsh] 找不到 $REAL" >&2; exit 127; }
+
+if [ "$#" -gt 0 ]; then
+  exec "$REAL" "$@"
+fi
+
+NODE_BIN="$(command -v node || true)"
+[ -n "$NODE_BIN" ] || { echo "[dsh] node 不在 PATH" >&2; exit 127; }
+BASH_BIN="$(command -v bash || true)"; [ -n "$BASH_BIN" ] || BASH_BIN=/bin/bash
+PORT="${DSH_WEB_PORT:-3080}"
+LOG="$ROOT/pj-logs/dsh.log"
+mkdir -p "$ROOT/pj-logs"; touch "$LOG"
+
+http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$PORT/" 2>/dev/null || true; }
+
+if [ "$(http_code)" = "000" ]; then
+  echo "[dsh] starting original dsh (port=$PORT)"
+  setsid nohup "$REAL" web --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
+  for _ in $(seq 1 40); do [ "$(http_code)" = "000" ] || break; sleep 1; done
+  [ "$(http_code)" = "000" ] && { echo "[dsh] 起不来，日志：$LOG" >&2; tail -5 "$LOG" >&2; exit 1; }
+fi
+
+# 复用本项目已经开在这个 target 上的代理，否则挑一个空闲端口
+LAN_PORT=""
+if [ -f "$LOG.lan.port" ]; then
+  p="$(cat "$LOG.lan.port" 2>/dev/null || true)"
+  [ -n "$p" ] && [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$p/" 2>/dev/null || true)" != "000" ] && LAN_PORT="$p"
+fi
+if [ -z "$LAN_PORT" ]; then
+  for p in $(seq 3082 3160); do
+    if "$NODE_BIN" -e 'const n=require("net");const s=n.createServer();s.once("error",()=>process.exit(1));s.listen(+process.argv[1],"0.0.0.0",()=>s.close(()=>process.exit(0)))' "$p" 2>/dev/null; then
+      LAN_PORT="$p"; break
+    fi
+  done
+  [ -n "$LAN_PORT" ] && echo "$LAN_PORT" > "$LOG.lan.port"
+fi
+[ -n "$LAN_PORT" ] || { echo "[dsh] 3082..3160 都被占用" >&2; exit 1; }
+
+SUP="$ROOT/bin/pj-lan-supervise-dsh"
+cat > "$SUP" <<SUPER
+#!$BASH_BIN
+while :; do
+  "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --log "$LOG.lan-req"
+  rc=\$?
+  [ "\$rc" -eq 0 ] && break
+  sleep 1
+done
+SUPER
+chmod +x "$SUP"
+if [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$LAN_PORT/" 2>/dev/null || true)" = "000" ]; then
+  setsid nohup "$SUP" >>"$LOG.lan" 2>&1 </dev/null &
+  echo $! > "$LOG.lan.pid"
+  for _ in $(seq 1 40); do [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$LAN_PORT/" 2>/dev/null || true)" != "000" ] && break; sleep 0.2; done
+fi
+
+"$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --print-only
+LOCAL="http://127.0.0.1:$PORT/"
+[ "${DSH_NO_OPEN:-0}" = "1" ] || {
+  command -v termux-open-url >/dev/null 2>&1 && termux-open-url "$LOCAL" >/dev/null 2>&1
+  command -v am >/dev/null 2>&1 && am start -a android.intent.action.VIEW -d "$LOCAL" >/dev/null 2>&1
+}
+echo "[dsh] $LOCAL"
+DSHWRAP
+sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dsh" && rm -f "$ROOT/bin/dsh.tmp"
+chmod +x "$ROOT/bin/dsh"
+
 cat > "$ROOT/bin/dsh-lan" <<'LAN'
 #!/usr/bin/env bash
 # dsh-lan — 把已经在跑的 dsh（默认 3080）开到局域网，客户端免凭证。

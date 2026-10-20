@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.5.0 — 2026-10-20
+
+- New `dsh` wrapper shipped by the installer: with no arguments it starts (or
+  reuses) the stock dsh on 3080, exposes it on the LAN through pj-lan, prints the
+  URL and QR, and opens the browser. With arguments it execs the real dsh
+  unchanged. `DSH_WEB_PORT` / `DSH_NO_OPEN` adjust it.
+- `dshpj` and `dsh` therefore both give a scannable LAN entry with no
+  credentials, on separate ports (3081+3082 for the patched one, 3080+3084 for
+  the stock one), each with its own supervisor.
+
 ## v1.4.0 — 2026-10-20
 
 - `dshpj` no longer dies when the terminal closes: the LAN proxy now runs from a
