@@ -209,7 +209,7 @@ function forward(req, res, retried = false) {
         })
         return
       }
-      logLine(`${req.method} ${req.url} -> ${up.statusCode}`)
+      logLine(`${req.socket?.remoteAddress || '?'} host=${req.headers.host || '-'} ${req.method} ${req.url} -> ${up.statusCode}`)
       up.on('error', () => { try { res.destroy() } catch {} })
       const headers = { ...up.headers }
       delete headers['set-cookie']

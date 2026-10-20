@@ -5,6 +5,10 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Termux 上没有 /usr/bin/env；su 逃逸后 LD_PRELOAD 被清掉，#!/usr/bin/env bash 会
+# 直接 bad interpreter。生成脚本时一律写死绝对 bash 路径。
+BASH_BIN="$(command -v bash || true)"
+[ -n "$BASH_BIN" ] || BASH_BIN=/bin/bash
 ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
 
 echo "==> 安装到 $ROOT"
@@ -148,10 +152,14 @@ LAN_PORT="$(pick_lan_port)" || { echo "[dshpj] 局域网端口 $LAN_PORT 起被�
 LAN_PID=""
 supervise() {
   trap 'kill ${LAN_PID:-0} 2>/dev/null; exit 0' INT TERM
+  local rc=0
   while :; do
-    "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN"
-    rc=$?
-    [ "$rc" -eq 0 ] && break
+    # 放进 if 里，set -e 才不会在代理非 0 退出时把守护循环一起干掉
+    if "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" --log "$LOG.lan-req"; then
+      break
+    else
+      rc=$?
+    fi
     echo "[dshpj] 局域网代理退出（$rc），1 秒后重启"
     sleep 1
   done
@@ -168,6 +176,7 @@ done
 open_url "http://127.0.0.1:$LAN_PORT/" || echo "[dshpj] 打不开浏览器，手动访问：http://127.0.0.1:$LAN_PORT/"
 wait $SUP_PID
 LAUNCHER
+sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dshpj" && rm -f "$ROOT/bin/dshpj.tmp"
 chmod +x "$ROOT/bin/dshpj"
 
 cat > "$ROOT/bin/dshpj-doctor" <<'DOCTOR'
@@ -203,6 +212,7 @@ if [ -f "$pr" ]; then
 fi
 [ "$fail" -eq 0 ] && echo && echo "PASS" || { echo; echo "FAIL — 看上面 MISSING 那行"; exit 1; }
 DOCTOR
+sed -i.tmp "1s|.*|#!$BASH_BIN|" "$ROOT/bin/dshpj-doctor" && rm -f "$ROOT/bin/dshpj-doctor.tmp"
 chmod +x "$ROOT/bin/dshpj-doctor"
 
 # ---- PATH -----------------------------------------------------------------
