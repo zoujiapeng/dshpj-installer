@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.0 — 2026-10-20
+
+- `dshpj` now opens the UI to the LAN and prints a scannable QR: it starts the
+  patched dsh on 127.0.0.1, runs `pj-lan.mjs` as a TCP forward on 0.0.0.0:<port+1>
+  (dsh refuses `--host 0.0.0.0` itself), reads the session token from the startup
+  log, and renders the LAN URL with `?token=` — scanning logs in without typing
+  anything. `assets/qrcode.js` is a vendored MIT QR encoder, no external tools.
+- Refusal layer: catch Chinese refusals the old patterns missed (我不做 / 我不写 /
+  这个我不能提供), strip refusal-only assistant turns from every request instead of
+  only the retry, `maxAttempts: 3`, and a prefill instruction on retry.
+- `patch.yml`: escalation now asks for decomposition into neutral sub-problems.
+- Launcher fixes: `http_code` returned `000000` on connection failure (the
+  launcher then assumed a dead port was live and never started the server), and
+  the token scrape raced the startup log.
+- `install.ps1`: same LAN/QR flow on Windows.
+
 ## v1.0.0 — 2026-10-19
 
 First public release. 13 layers, shipped as one `--patch` overlay; dsh itself is
