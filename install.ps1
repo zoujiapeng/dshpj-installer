@@ -66,7 +66,9 @@ for ($i = 0; $i -lt 20; $i++) {
     Start-Sleep -Milliseconds 500
 }
 
-if ($env:DSHPJ_NO_LAN) { Write-Host "http://127.0.0.1:$port/"; exit 0 }
+$localUrl = "http://127.0.0.1:$port/" + $(if ($token) { "?token=$token" } else { "" })
+if (-not $env:DSHPJ_NO_OPEN) { try { Start-Process $localUrl } catch { } }
+if ($env:DSHPJ_NO_LAN) { Write-Host $localUrl; exit 0 }
 & $node "$root\assets\pj-lan.mjs" --target "$port" --listen "$lanPort" --token "$token"
 '@
 $cmd = @'

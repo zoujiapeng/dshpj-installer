@@ -67,6 +67,17 @@ lan_ip() {
 }
 IP="$(lan_ip)"
 
+# 和原版 dsh web 一样：起完自动开浏览器。termux-open-url / xdg-open / open / am 依次尝试。
+open_url() {
+  local url="$1"
+  [ "${DSHPJ_NO_OPEN:-0}" = "1" ] && return 0
+  if command -v termux-open-url >/dev/null 2>&1 && termux-open-url "$url" >/dev/null 2>&1; then return 0; fi
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && command -v open >/dev/null 2>&1 && open "$url" >/dev/null 2>&1; then return 0; fi
+  if command -v xdg-open >/dev/null 2>&1 && xdg-open "$url" >/dev/null 2>&1; then return 0; fi
+  if command -v am >/dev/null 2>&1 && am start -a android.intent.action.VIEW -d "$url" >/dev/null 2>&1; then return 0; fi
+  return 1
+}
+
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$PORT/" 2>/dev/null || true; }
 
 START_LINES=0
@@ -95,8 +106,11 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 
+LOCAL_URL="http://127.0.0.1:$PORT/${TOKEN:+?token=$TOKEN}"
+open_url "$LOCAL_URL" || echo "[dshpj] 打不开浏览器，手动访问：$LOCAL_URL"
+
 if [ "${DSHPJ_NO_LAN:-0}" = "1" ]; then
-  echo "[dshpj] http://127.0.0.1:$PORT/"
+  echo "[dshpj] $LOCAL_URL"
   exit 0
 fi
 if [ -z "$IP" ]; then

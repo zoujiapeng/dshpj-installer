@@ -81,6 +81,7 @@ $ dshpj
 
 - dsh 自己拒绝 `--host 0.0.0.0`（它不愿把 RCE 暴露到网络），所以这里**不改它的监听地址**：dsh 永远只听 `127.0.0.1`，由 `pj-lan.mjs` 在 `0.0.0.0` 上做一条 TCP 转发。
 - 网址里的 `?token=…` 是从服务启动日志里取的，扫码后服务端会种一个绑定该 host:port 的 cookie（`dsh-auth-…`），**不需要手输任何凭证或密码**。
+- **还是会自动开浏览器**：起完服务抓到 token 就调 `termux-open-url`（手机）/ `xdg-open`（Linux）/ `open`（macOS）/ `Start-Process`（Windows），打不开就打印带 token 的地址。`DSHPJ_NO_OPEN=1` 关掉。
 - 端口：本机 `DSHPJ_PORT`（默认 3081），局域网自动 `+1`；用 `DSHPJ_LAN_PORT` 指定。
 - 二维码是终端里直接渲染的（`assets/qrcode.js`，MIT），不依赖 `qrencode`。
 - `Ctrl-C` 只停转发，后台的 dsh 还在；`DSHPJ_NO_LAN=1 dshpj` 只开本机。
