@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.0 — 2026-10-20
+
+- LAN frontend is now **passwordless**: `pj-lan.mjs` exchanges the startup token for
+  a `dsh-auth-*` session cookie once and injects it on every proxied request, so
+  clients open `http://<ip>:3082/` with no token, account or password in the URL.
+  The cookie is refreshed automatically when dsh restarts (401/403 path).
+- `pj-lan.mjs` is an HTTP/WS-aware proxy instead of a raw TCP splice, so the
+  cookie injection and Origin/Host normalisation happen per request.
+- Launcher starts the proxy first, waits for it to listen, then opens the
+  passwordless URL; `Ctrl-C` stops the proxy only.
+
 ## v1.1.0 — 2026-10-20
 
 - `dshpj` now opens the UI to the LAN and prints a scannable QR: it starts the

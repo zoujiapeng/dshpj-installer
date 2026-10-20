@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// pj-lan.mjs — 把 127.0.0.1 上的 dsh web 暴露到局域网，并在终端打印网址 + 二维码。
+// pj-lan.mjs — 把 127.0.0.1 上的 dsh web 开放到局域网，客户端不需要任何 token 或密码。
 //
-// dsh 自己拒绝 --host 0.0.0.0（它的理由是会把 RCE 暴露到网络），所以这里不碰
-// 它的监听地址：dsh 仍然只听 127.0.0.1，由本进程在 0.0.0.0 上做一条 TCP 转发。
-// 前端拿到的 URL 里带 ?token=…，手机扫码即进，不用输任何凭证。
+// dsh 自己拒绝 --host 0.0.0.0，并且对每个请求校验 dsh-auth-* cookie。这里不改它的
+// 判断，而是由本进程替所有局域网客户端"持票"：
 //
-//   node pj-lan.mjs --target 3081 --listen 3082 --token <token>
+//   1. 启动时用 ?token=<启动日志里的 token> 换一张 browser-session cookie；
+//   2. 之后每个 HTTP 请求和 WebSocket 握手都由本进程注入这张 cookie，
+//      客户端打开 http://<ip>:<port>/ 直接进，URL 里没有任何凭证；
+//   3. cookie 失效（401/403）时自动重新换票并重试一次。
 //
 // 只依赖 node 内置模块；二维码用同目录的 qrcode.js（MIT, Kazuhiko Arase）。
-import net from 'node:net'
+import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -22,14 +24,14 @@ function arg(name, fallback) {
   return i > -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback
 }
 
-const target = Number(arg('target', 3081))
-const listen = Number(arg('listen', target + 1))
+const targetPort = Number(arg('target', 3081))
+const listenPort = Number(arg('listen', targetPort + 1))
 const token = arg('token', '')
+const targetHost = `127.0.0.1:${targetPort}`
 
 function lanAddress() {
-  const nets = os.networkInterfaces()
   const scored = []
-  for (const [name, addrs] of Object.entries(nets)) {
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs || []) {
       if (a.family !== 'IPv4' || a.internal) continue
       let score = 0
@@ -56,51 +58,121 @@ function renderQr(url) {
   }
 }
 
-const ip = lanAddress()
-const lanUrl = ip ? `http://${ip}:${listen}/?token=${token}` : null
-const localUrl = `http://127.0.0.1:${target}/?token=${token}`
+// ── token -> browser-session cookie ──────────────────────────────────────────
+let cookie = ''
 
-const line = (s) => process.stdout.write(`${s}\n`)
-line('')
-line('  dshpj — 13 层补丁栈（原版 dsh 在别的端口，互不影响）')
-line('')
-line(`  本机   ${localUrl}`)
-if (lanUrl) {
-  line(`  局域网 ${lanUrl}`)
-  line('')
-  const qr = renderQr(lanUrl)
-  if (qr) {
-    line(qr)
-  } else {
-    line(`  （二维码组件缺失：${path.join(here, 'qrcode.js')}）`)
-  }
-} else {
-  line('  局域网 未检测到 wlan0 地址，跳过')
+function exchangeCookie() {
+  return new Promise((resolve) => {
+    if (!token) return resolve('')
+    const req = http.request(
+      { host: '127.0.0.1', port: targetPort, path: `/?token=${encodeURIComponent(token)}`, method: 'GET', headers: { host: targetHost } },
+      (res) => {
+        const raw = res.headers['set-cookie'] || []
+        const found = raw.map((c) => String(c).split(';')[0]).find((c) => c.startsWith('dsh-auth-'))
+        res.resume()
+        resolve(found || '')
+      },
+    )
+    req.on('error', () => resolve(''))
+    req.end()
+  })
 }
-line('')
 
-// TCP 转发：0.0.0.0:listen -> 127.0.0.1:target
-const server = net.createServer((client) => {
-  const upstream = net.connect(target, '127.0.0.1')
-  client.pipe(upstream)
-  upstream.pipe(client)
-  const close = () => {
-    client.destroy()
-    upstream.destroy()
+// 客户端带来的这些头一律重写：Host/Origin 归一到环回，Cookie 换成我们的票。
+const REWRITTEN = new Set(['host', 'origin', 'referer', 'cookie', 'connection', 'upgrade', 'keep-alive', 'proxy-connection'])
+
+function forwardHeaders(req) {
+  const headers = {}
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (REWRITTEN.has(k.toLowerCase())) continue
+    headers[k] = v
   }
-  client.on('error', close)
-  upstream.on('error', close)
-  client.on('close', close)
-  upstream.on('close', close)
+  headers.host = targetHost
+  headers.origin = `http://${targetHost}`
+  headers.referer = `http://${targetHost}/`
+  if (cookie) headers.cookie = cookie
+  return headers
+}
+
+const server = http.createServer((req, res) => forward(req, res))
+
+function forward(req, res, retried = false) {
+  const upstream = http.request(
+    { host: '127.0.0.1', port: targetPort, method: req.method, path: req.url, headers: forwardHeaders(req) },
+    (up) => {
+      if ((up.statusCode === 401 || up.statusCode === 403) && !retried) {
+        up.resume()
+        exchangeCookie().then((c) => {
+          if (c) cookie = c
+          forward(req, res, true)
+        })
+        return
+      }
+      const headers = { ...up.headers }
+      delete headers['set-cookie']
+      res.writeHead(up.statusCode || 502, headers)
+      up.pipe(res)
+    },
+  )
+  upstream.on('error', (error) => {
+    if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end(`pj-lan upstream error: ${error.message}`)
+  })
+  req.pipe(upstream)
+}
+
+// WebSocket / HTTP upgrade：注入 cookie 后把两条 socket 直接对接
+server.on('upgrade', (req, socket, head) => {
+  const upstream = http.request({
+    host: '127.0.0.1',
+    port: targetPort,
+    method: req.method,
+    path: req.url,
+    headers: forwardHeaders(req),
+  })
+  upstream.on('upgrade', (res, upstreamSocket, upstreamHead) => {
+    const lines = ['HTTP/1.1 101 Switching Protocols']
+    for (let i = 0; i < res.rawHeaders.length; i += 2) {
+      lines.push(`${res.rawHeaders[i]}: ${res.rawHeaders[i + 1]}`)
+    }
+    socket.write(`${lines.join('\r\n')}\r\n\r\n`)
+    if (upstreamHead?.length) socket.write(upstreamHead)
+    if (head?.length) upstreamSocket.write(head)
+    upstreamSocket.pipe(socket)
+    socket.pipe(upstreamSocket)
+    upstreamSocket.on('error', () => socket.destroy())
+    socket.on('error', () => upstreamSocket.destroy())
+  })
+  upstream.on('error', () => socket.destroy())
+  upstream.end()
 })
 
-server.on('error', (error) => {
-  line(`  [pj-lan] 转发未启动：${error.message}`)
-  if (String(error.message).includes('EADDRINUSE')) {
-    line(`  [pj-lan] 端口 ${listen} 被占用，用 DSHPJ_LAN_PORT=<port> 换一个`)
-  }
-})
+const ip = lanAddress()
+const lanUrl = ip ? `http://${ip}:${listenPort}/` : null
+const line = (s) => process.stdout.write(`${s}\n`)
 
-server.listen(listen, '0.0.0.0', () => {
-  line(`  [pj-lan] 0.0.0.0:${listen} -> 127.0.0.1:${target}（前台运行，Ctrl-C 结束）`)
+exchangeCookie().then((c) => {
+  cookie = c
+  line('')
+  line('  dshpj — 局域网前端（无 token、无密码）')
+  line('')
+  line(`  手机/平板  ${lanUrl || '（没检测到局域网地址）'}`)
+  line(`  本机       http://127.0.0.1:${listenPort}/`)
+  line('')
+  if (lanUrl) {
+    const qr = renderQr(lanUrl)
+    if (qr) line(qr)
+    else line(`  （二维码组件缺失：${path.join(here, 'qrcode.js')}）`)
+  }
+  line('')
+  line(`  [pj-lan] 0.0.0.0:${listenPort} -> 127.0.0.1:${targetPort}${cookie ? '（已持票，客户端免验证）' : '（没换到 cookie，检查 token）'}`)
+  line('')
+
+  server.on('error', (error) => {
+    line(`  [pj-lan] 监听失败：${error.message}`)
+    if (String(error.message).includes('EADDRINUSE')) {
+      line(`  [pj-lan] 端口 ${listenPort} 被占用，用 DSHPJ_LAN_PORT=<port> 换一个`)
+    }
+  })
+  server.listen(listenPort, '0.0.0.0')
 })

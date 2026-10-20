@@ -107,19 +107,24 @@ for _ in $(seq 1 20); do
 done
 
 LOCAL_URL="http://127.0.0.1:$PORT/${TOKEN:+?token=$TOKEN}"
-open_url "$LOCAL_URL" || echo "[dshpj] 打不开浏览器，手动访问：$LOCAL_URL"
 
-if [ "${DSHPJ_NO_LAN:-0}" = "1" ]; then
+if [ "${DSHPJ_NO_LAN:-0}" = "1" ] || [ -z "$IP" ]; then
+  open_url "$LOCAL_URL" || true
   echo "[dshpj] $LOCAL_URL"
   exit 0
 fi
-if [ -z "$IP" ]; then
-  echo "[dshpj] 没检测到局域网地址，只开本机：http://127.0.0.1:$PORT/"
-  exit 0
-fi
 
-# 前台跑转发 + 打印网址/二维码；Ctrl-C 只停转发，后台服务还在
-exec "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN"
+# 局域网代理自己持 cookie，客户端 URL 里不带任何 token。
+# 先起代理、等它监听，再开浏览器；前台等代理，Ctrl-C 只停代理，后台服务还在。
+"$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" &
+LAN_PID=$!
+trap 'kill $LAN_PID 2>/dev/null' INT TERM
+for _ in $(seq 1 40); do
+  [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$LAN_PORT/" 2>/dev/null || true)" != "000" ] && break
+  sleep 0.2
+done
+open_url "http://127.0.0.1:$LAN_PORT/" || echo "[dshpj] 打不开浏览器，手动访问：http://127.0.0.1:$LAN_PORT/"
+wait $LAN_PID
 LAUNCHER
 chmod +x "$ROOT/bin/dshpj"
 
