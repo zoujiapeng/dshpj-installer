@@ -11,10 +11,18 @@
 //
 // 只依赖 node 内置模块；二维码用同目录的 qrcode.js（MIT, Kazuhiko Arase）。
 import http from 'node:http'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+
+process.on('uncaughtException', (error) => {
+  try { console.error(`[pj-lan] uncaught: ${error?.message || error}`) } catch {}
+})
+process.on('unhandledRejection', (error) => {
+  try { console.error(`[pj-lan] unhandled: ${error?.message || error}`) } catch {}
+})
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -27,6 +35,11 @@ function arg(name, fallback) {
 const targetPort = Number(arg('target', 3081))
 const listenPort = Number(arg('listen', targetPort + 1))
 const token = arg('token', '')
+const logPath = arg('log', process.env.PJ_LAN_LOG || '')
+function logLine(line) {
+  if (!logPath) return
+  try { fs.appendFileSync(logPath, `${new Date().toISOString()} ${line}\n`) } catch {}
+}
 const targetHost = `127.0.0.1:${targetPort}`
 
 function lanAddress() {
@@ -61,7 +74,7 @@ function renderQr(url) {
 // ── token -> browser-session cookie ──────────────────────────────────────────
 let cookie = ''
 
-function exchangeCookie() {
+function exchangeOnce() {
   return new Promise((resolve) => {
     if (!token) return resolve('')
     const req = http.request(
@@ -76,6 +89,15 @@ function exchangeCookie() {
     req.on('error', () => resolve(''))
     req.end()
   })
+}
+
+async function exchangeCookie() {
+  for (let i = 0; i < 3; i += 1) {
+    const c = await exchangeOnce()
+    if (c) return c
+    await new Promise((r) => setTimeout(r, 400))
+  }
+  return ''
 }
 
 // 客户端带来的这些头一律重写：Host/Origin 归一到环回，Cookie 换成我们的票。
@@ -94,13 +116,92 @@ function forwardHeaders(req) {
   return headers
 }
 
-const server = http.createServer((req, res) => forward(req, res))
+
+// ── /pj/sessions：给手机一个"确定能看到会话"的入口 ──────────────────────────
+// 有些浏览器在换 origin 后拿不到前端的本地状态，首页看起来是空的。这里直接
+// 调一次 session/list，把会话按时间列出来，点进去就是 /?session=<id>。
+function renderSessionsPage(req, res) {
+  const body = JSON.stringify({
+    type: 'client-request',
+    rpcId: 'pj-' + Date.now(),
+    method: 'session/list',
+    payload: { args: { _request: {} } },
+  })
+  const up = http.request(
+    {
+      host: '127.0.0.1',
+      port: targetPort,
+      method: 'POST',
+      path: '/api/session/list',
+      headers: {
+        host: targetHost,
+        origin: `http://${targetHost}`,
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      },
+    },
+    (r) => {
+      let raw = ''
+      r.on('data', (c) => { raw += c })
+      r.on('end', () => {
+        let items = []
+        try {
+          const parsed = JSON.parse(raw)
+          items = parsed?.result?.value?.items || []
+        } catch {}
+        const rows = items
+          .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+          .slice(0, 60)
+          .map((it) => {
+            const t = it?.projections?.values?.title || '(无标题)'
+            const when = it.updatedAt ? new Date(it.updatedAt).toLocaleString() : ''
+            const esc = String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+            return `<li><a href="/?session=${encodeURIComponent(it.sessionId)}">${esc}</a>` +
+              `<div class=meta>${when} · ${it.cwd || ''}${it.running ? ' · 运行中' : ''}</div></li>`
+          })
+          .join('')
+        const html = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>dshpj 会话</title><style>
+body{font:16px system-ui;background:#151517;color:#e8e8ea;margin:0;padding:16px}
+h1{font-size:18px;font-weight:600;margin:0 0 12px}
+ul{list-style:none;padding:0;margin:0}
+li{padding:10px 0;border-bottom:1px solid #2a2a2e}
+a{color:#7cc4ff;text-decoration:none;font-weight:500}
+.meta{color:#8b8b93;font-size:12px;margin-top:4px;word-break:break-all}
+</style><h1>dshpj 会话（${items.length}）</h1><ul>${rows || '<li>没有会话</li>'}</ul>`
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        res.end(html)
+      })
+    },
+  )
+  up.on('error', (error) => {
+    res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
+    res.end('pj-lan: ' + error.message)
+  })
+  up.end(body)
+}
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/pj/sessions') return renderSessionsPage(req, res)
+  peekBody(req, res)
+  forward(req, res)
+})
+
+function peekBody(req, res) {
+  if (!logPath) return
+  if (req.method !== 'POST') return
+  let body = ''
+  req.on('data', (c) => { if (body.length < 300) body += c.toString('utf8') })
+  req.on('end', () => logLine(`BODY ${req.url} ${body.replace(/\s+/g, ' ').slice(0, 300)}`))
+}
 
 function forward(req, res, retried = false) {
   const upstream = http.request(
     { host: '127.0.0.1', port: targetPort, method: req.method, path: req.url, headers: forwardHeaders(req) },
     (up) => {
-      if ((up.statusCode === 401 || up.statusCode === 403) && !retried) {
+      const maybeAuth = up.statusCode === 401 || up.statusCode === 403 ||
+        (up.statusCode === 404 && String(req.url || '').startsWith('/api/'))
+      if (maybeAuth && !retried) {
         up.resume()
         exchangeCookie().then((c) => {
           if (c) cookie = c
@@ -108,16 +209,24 @@ function forward(req, res, retried = false) {
         })
         return
       }
+      logLine(`${req.method} ${req.url} -> ${up.statusCode}`)
+      up.on('error', () => { try { res.destroy() } catch {} })
       const headers = { ...up.headers }
       delete headers['set-cookie']
+      if (res.destroyed || res.writableEnded) { up.resume(); return }
       res.writeHead(up.statusCode || 502, headers)
       up.pipe(res)
     },
   )
   upstream.on('error', (error) => {
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end(`pj-lan upstream error: ${error.message}`)
+    try {
+      if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end(`pj-lan upstream error: ${error.message}`)
+    } catch {}
   })
+  res.on('close', () => { try { upstream.destroy() } catch {} })
+  res.on('error', () => { try { upstream.destroy() } catch {} })
+  req.on('error', () => { try { upstream.destroy() } catch {} })
   req.pipe(upstream)
 }
 
@@ -165,7 +274,7 @@ exchangeCookie().then((c) => {
     else line(`  （二维码组件缺失：${path.join(here, 'qrcode.js')}）`)
   }
   line('')
-  line(`  [pj-lan] 0.0.0.0:${listenPort} -> 127.0.0.1:${targetPort}${cookie ? '（已持票，客户端免验证）' : '（没换到 cookie，检查 token）'}`)
+  line(`  [pj-lan] 0.0.0.0:${listenPort} -> 127.0.0.1:${targetPort}（Host 归一为环回，客户端免验证）`)
   line('')
 
   server.on('error', (error) => {

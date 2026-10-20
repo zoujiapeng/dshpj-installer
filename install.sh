@@ -11,7 +11,7 @@ echo "==> 安装到 $ROOT"
 mkdir -p "$ROOT/assets" "$ROOT/bin" "$ROOT/pj-logs"
 cp "$SRC/assets/patch.yml" "$SRC/assets/pj-operator-policy.mjs" \
    "$SRC/assets/pj-jailbreak.mjs" "$SRC/assets/pj-fact-authority.mjs" \
-   "$SRC/assets/pj-lan.mjs" "$SRC/assets/qrcode.js" \
+   "$SRC/assets/pj-lan.mjs" "$SRC/assets/pj-ip.mjs" "$SRC/assets/qrcode.js" \
    "$SRC/assets/pj-gateway.yml" "$ROOT/assets/"
 
 # ---- 启动器 ----------------------------------------------------------------
@@ -29,6 +29,7 @@ ROOT="${DSHPJ_HOME:-$HOME/.dshpj}"
 PROFILE="${DSHPJ_PROFILE:-web}"
 PORT="${DSHPJ_PORT:-3081}"
 LAN_PORT="${DSHPJ_LAN_PORT:-$((PORT + 1))}"
+PORT_SCAN="${DSHPJ_PORT_SCAN:-40}"
 LOG="$ROOT/pj-logs/dshpj.log"
 mkdir -p "$ROOT/pj-logs"
 touch "$LOG"
@@ -78,10 +79,34 @@ open_url() {
   return 1
 }
 
+# 端口占用探测（不依赖 ss/netstat，Windows/WSL/macOS 都有 node）
+port_free() {
+  "$NODE_BIN" -e 'const n=require("net");const s=n.createServer();s.once("error",()=>process.exit(1));s.listen(+process.argv[1],"0.0.0.0",()=>s.close(()=>process.exit(0)))' "$1" 2>/dev/null
+}
+is_dsh_on() {
+  curl -s --max-time 2 "http://127.0.0.1:$1/" 2>/dev/null | grep -q '__DSH_BOOT__'
+}
+pick_server_port() {
+  local p
+  if is_dsh_on "$PORT"; then printf '%s' "$PORT"; return 0; fi
+  for p in $(seq "$PORT" $((PORT + PORT_SCAN))); do
+    if port_free "$p"; then printf '%s' "$p"; return 0; fi
+  done
+  return 1
+}
+pick_lan_port() {
+  local p
+  for p in $(seq "$LAN_PORT" $((LAN_PORT + PORT_SCAN))); do
+    if port_free "$p"; then printf '%s' "$p"; return 0; fi
+  done
+  return 1
+}
+
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$PORT/" 2>/dev/null || true; }
 
 START_LINES=0
-if [ "$(http_code)" = "000" ]; then
+if ! is_dsh_on "$PORT"; then
+  PORT="$(pick_server_port)" || { echo "[dshpj] $PORT..$((PORT+PORT_SCAN)) 全被占用，用 DSHPJ_PORT 指定一个空闲端口" >&2; exit 1; }
   START_LINES="$(wc -l < "$LOG" 2>/dev/null || echo 0)"
   echo "[dshpj] starting patched dsh (profile=$PROFILE port=$PORT)"
   start=( "${args[@]}" --no-open --port "$PORT" )
@@ -116,15 +141,32 @@ fi
 
 # 局域网代理自己持 cookie，客户端 URL 里不带任何 token。
 # 先起代理、等它监听，再开浏览器；前台等代理，Ctrl-C 只停代理，后台服务还在。
-"$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN" &
-LAN_PID=$!
-trap 'kill $LAN_PID 2>/dev/null' INT TERM
+LAN_PORT="$(pick_lan_port)" || { echo "[dshpj] 局域网端口 $LAN_PORT 起被占满，用 DSHPJ_LAN_PORT 指定" >&2; exit 1; }
+
+# 代理守护：异常退出就重起（浏览器刷新会掐断 SSE，早前一次 ECONNRESET 就能把整个
+# 代理带走，用户看到的就是"页面空白、会话消失"）。这里保证它死了会自己回来。
+LAN_PID=""
+supervise() {
+  trap 'kill ${LAN_PID:-0} 2>/dev/null; exit 0' INT TERM
+  while :; do
+    "$NODE_BIN" "$ROOT/assets/pj-lan.mjs" --target "$PORT" --listen "$LAN_PORT" --token "$TOKEN"
+    rc=$?
+    [ "$rc" -eq 0 ] && break
+    echo "[dshpj] 局域网代理退出（$rc），1 秒后重启"
+    sleep 1
+  done
+}
+supervise &
+SUP_PID=$!
+LAN_PID=$SUP_PID
+echo $LAN_PID > "$LOG.lan.pid"
+
 for _ in $(seq 1 40); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$LAN_PORT/" 2>/dev/null || true)" != "000" ] && break
   sleep 0.2
 done
 open_url "http://127.0.0.1:$LAN_PORT/" || echo "[dshpj] 打不开浏览器，手动访问：http://127.0.0.1:$LAN_PORT/"
-wait $LAN_PID
+wait $SUP_PID
 LAUNCHER
 chmod +x "$ROOT/bin/dshpj"
 
@@ -137,7 +179,7 @@ fail=0
 echo "[1/3] 补丁文件"
 for f in "$ROOT/assets/patch.yml" "$ROOT/assets/pj-operator-policy.mjs" \
          "$ROOT/assets/pj-jailbreak.mjs" "$ROOT/assets/pj-fact-authority.mjs" \
-         "$ROOT/assets/pj-lan.mjs" "$ROOT/assets/qrcode.js"; do
+         "$ROOT/assets/pj-lan.mjs" "$ROOT/assets/pj-ip.mjs" "$ROOT/assets/qrcode.js"; do
   [ -f "$f" ] && echo "  ok  $(basename "$f")" || { echo "  MISSING $(basename "$f")"; fail=1; }
 done
 echo "[2/3] 配置装配"

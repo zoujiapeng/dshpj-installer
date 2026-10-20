@@ -12,7 +12,7 @@ if ($DryRun) { Write-Host "(dry run, nothing written)" }
 
 if (-not $DryRun) {
     New-Item -ItemType Directory -Force "$Root\assets", "$Root\bin", "$Root\pj-logs" | Out-Null
-    Copy-Item "$assets\patch.yml", "$assets\pj-operator-policy.mjs", "$assets\pj-jailbreak.mjs", "$assets\pj-fact-authority.mjs", "$assets\pj-lan.mjs", "$assets\qrcode.js", "$assets\pj-gateway.yml" "$Root\assets\" -Force
+    Copy-Item "$assets\patch.yml", "$assets\pj-operator-policy.mjs", "$assets\pj-jailbreak.mjs", "$assets\pj-fact-authority.mjs", "$assets\pj-lan.mjs", "$assets\pj-ip.mjs", "$assets\qrcode.js", "$assets\pj-gateway.yml" "$Root\assets\" -Force
 }
 
 # ---- launcher -------------------------------------------------------------

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.0 — 2026-10-20
+
+- **Fixed: the LAN proxy died on every page refresh.** When the browser reconnects,
+  it aborts `/plugins/events` (SSE); the upstream socket then raises `ECONNRESET`,
+  which was unhandled and took the whole process down. From then on the phone got
+  nothing: page blank, sessions "gone", while a POST sent in the short window
+  still ran. The proxy now has error handlers on both sockets, `res`/`req`, plus
+  uncaught/unhandled guards, and the launcher supervises it (restarts on non-zero
+  exit). Verified: SSE streams through, and three refresh cycles leave the proxy
+  alive and the page at 200.
+- `/pj/sessions`: a plain HTML list of every session (title, time, cwd) that works
+  without the SPA, each row linking to `/?session=<id>` — the reliable way to
+  find history from another device.
+- Automatic port selection: server and proxy scan up to 40 ports each
+  (`DSHPJ_PORT_SCAN`), reuse an existing dsh on the base port, and print the ports
+  actually in use.
+- `pj-ip.mjs`: lists every IPv4 with its URL and renders a QR for the most likely
+  hotspot address (hotspot interfaces get picked first).
+
 ## v1.2.0 — 2026-10-20
 
 - LAN frontend is now **passwordless**: `pj-lan.mjs` exchanges the startup token for
