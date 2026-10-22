@@ -89,6 +89,19 @@ $ dshpj
 - 起完会**自动开浏览器**（`termux-open-url` / `xdg-open` / `open` / `Start-Process`），
   `DSHPJ_NO_OPEN=1` 关掉；`Ctrl-C` 只停代理，后台的 dsh 还在。
 
+## 换机 / 整机快照：[dshpack](https://github.com/zoujiapeng/dshpack)
+
+装完之后想把**整台手机**的 dsh 环境（含 dshpj 补丁栈、`~/.dsh` 会话与存储、
+`@deepseek-ai/*` 全局包、`$PREFIX/bin` 包装器）搬到另一台手机的 Termux：
+
+```bash
+dshpack pack --mode std            # 原机：打成 tar.zst（~105 MB）+ RESTORE.sh + MANIFEST
+dshpack restore xxx.tar.zst        # 新机：校验 -> 备份 -> 还原 -> 自检
+```
+
+Termux 前缀在所有安卓设备上固定为 `/data/data/com.termux/files/usr`，所以整棵
+`node_modules` 和 shebang 能原样搬过去，不需要重新 install。
+
 ## 安装
 
 ### Linux / Termux / macOS
